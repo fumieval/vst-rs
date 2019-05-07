@@ -16,6 +16,7 @@ use api::consts::*;
 use api::{self, AEffect, PluginFlags, PluginMain, Supported, TimeInfo};
 use buffer::AudioBuffer;
 use channels::ChannelInfo;
+use editor::{Editor, Rect};
 use interfaces;
 use plugin::{self, Category, Info, Plugin, PluginParameters};
 
@@ -278,6 +279,7 @@ pub struct PluginInstance {
     params: Arc<PluginParametersInstance>,
     lib: Arc<Library>,
     info: Info,
+    editor: PluginInstanceEditor,
 }
 
 struct PluginParametersInstance {
@@ -401,6 +403,7 @@ impl PluginInstance {
             params,
             lib,
             info: Default::default(),
+            editor: PluginInstanceEditor { effect, open: false },
         };
 
         unsafe {
@@ -583,6 +586,10 @@ impl Plugin for PluginInstance {
     fn get_parameter_object(&mut self) -> Arc<dyn PluginParameters> {
         Arc::clone(&self.params) as Arc<dyn PluginParameters>
     }
+
+    fn get_editor(&mut self) -> Option<Box<dyn Editor>> {
+        Some(Box::new(self.editor.clone()))
+    }
 }
 
 impl PluginParameters for PluginParametersInstance {
@@ -629,8 +636,6 @@ impl PluginParameters for PluginParametersInstance {
     fn string_to_parameter(&self, index: i32, text: String) -> bool {
         self.write_string(plugin::OpCode::StringToParameter, index, 0, &text, 0.0) > 0
     }
-
-    // TODO: Editor
 
     fn get_preset_data(&self) -> Vec<u8> {
         // Create a pointer that can be updated from the plugin.
@@ -679,6 +684,70 @@ impl PluginParameters for PluginParametersInstance {
             0.0,
         );
     }
+}
+
+#[derive(Clone)]
+struct PluginInstanceEditor {
+    effect: *mut AEffect,
+    open: bool,
+}
+
+impl PluginInstanceEditor {
+    /// Send a dispatch message to the plugin.
+    fn dispatch(&self, opcode: plugin::OpCode, index: i32, value: isize, ptr: *mut c_void, opt: f32) -> isize {
+        dispatch(self.effect, opcode, index, value, ptr, opt)
+    }
+
+    fn rect(&self) -> Rect {
+        // Create a pointer that can be updated from the plugin.
+        let mut ptr: *mut Rect = ptr::null_mut();
+        self.dispatch(
+            plugin::OpCode::EditorGetRect,
+            0,
+            0,
+            &mut ptr as *mut *mut Rect as *mut c_void,
+            0.0,
+        );
+        unsafe { *ptr as Rect }
+    }
+}
+
+impl Editor for PluginInstanceEditor {
+    fn size(&self) -> (i32, i32) {
+        let rect = self.rect();
+        ((rect.right - rect.left) as i32, (rect.bottom - rect.top) as i32)
+    }
+
+    fn position(&self) -> (i32, i32) {
+        let rect = self.rect();
+        (rect.left as i32, rect.top as i32)
+    }
+
+    fn open(&mut self, parent: *mut c_void) -> bool {
+        let result = self.dispatch(plugin::OpCode::EditorOpen, 0, 0, parent, 0.0);
+        let open = result != 0;
+        self.open = open;
+        open
+    }
+
+    fn is_open(&mut self) -> bool {
+        self.open
+    }
+}
+
+fn dispatch(
+    effect: *mut AEffect,
+    opcode: plugin::OpCode,
+    index: i32,
+    value: isize,
+    ptr: *mut c_void,
+    opt: f32,
+) -> isize {
+    let dispatcher = unsafe { (*effect).dispatcher };
+    if (dispatcher as *mut u8).is_null() {
+        panic!("Plugin was not loaded correctly.");
+    }
+    dispatcher(effect, opcode.into(), index, value, ptr, opt)
 }
 
 /// Used for constructing `AudioBuffer` instances on the host.
