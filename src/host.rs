@@ -411,10 +411,7 @@ impl PluginInstance {
             let flags = PluginFlags::from_bits_truncate(unsafe_effect.flags);
 
             if flags.intersects(PluginFlags::HAS_EDITOR) {
-                plug.editor = Some(Box::new(PluginInstanceEditor {
-                    effect: effect,
-                    open: false,
-                }));
+                plug.editor = Some(Box::new(PluginInstanceEditor { effect: effect }));
             }
 
             plug.info = Info {
@@ -696,7 +693,6 @@ impl PluginParameters for PluginParametersInstance {
 #[derive(Clone)]
 struct PluginInstanceEditor {
     effect: *mut AEffect,
-    open: bool,
 }
 
 impl PluginInstanceEditor {
@@ -732,13 +728,7 @@ impl Editor for PluginInstanceEditor {
 
     fn open(&mut self, parent: *mut c_void) -> bool {
         let result = self.dispatch(plugin::OpCode::EditorOpen, 0, 0, parent, 0.0);
-        let open = result != 0;
-        self.open = open;
-        open
-    }
-
-    fn is_open(&mut self) -> bool {
-        self.open
+        result != 0
     }
 }
 

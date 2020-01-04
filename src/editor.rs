@@ -31,9 +31,6 @@ pub trait Editor {
     /// Return `true` if the window opened successfully, `false` otherwise.
     fn open(&mut self, parent: *mut c_void) -> bool;
 
-    /// Return whether the window is currently open.
-    fn is_open(&mut self) -> bool;
-
     /// Set the knob mode for this editor (if supported by host).
     ///
     /// Return `true` if the knob mode was set.
