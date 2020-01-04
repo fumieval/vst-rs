@@ -279,7 +279,7 @@ pub struct PluginInstance {
     params: Arc<PluginParametersInstance>,
     lib: Arc<Library>,
     info: Info,
-    editor: PluginInstanceEditor,
+    editor: Option<Box<dyn Editor>>,
 }
 
 struct PluginParametersInstance {
@@ -403,31 +403,38 @@ impl PluginInstance {
             params,
             lib,
             info: Default::default(),
-            editor: PluginInstanceEditor { effect, open: false },
+            editor: None,
         };
 
         unsafe {
-            let effect: &AEffect = &*effect;
-            let flags = PluginFlags::from_bits_truncate(effect.flags);
+            let unsafe_effect: &AEffect = &*effect;
+            let flags = PluginFlags::from_bits_truncate(unsafe_effect.flags);
+
+            if flags.intersects(PluginFlags::HAS_EDITOR) {
+                plug.editor = Some(Box::new(PluginInstanceEditor {
+                    effect: effect,
+                    open: false,
+                }));
+            }
 
             plug.info = Info {
                 name: plug.read_string(op::GetProductName, MAX_PRODUCT_STR_LEN),
                 vendor: plug.read_string(op::GetVendorName, MAX_VENDOR_STR_LEN),
 
-                presets: effect.numPrograms,
-                parameters: effect.numParams,
-                inputs: effect.numInputs,
-                outputs: effect.numOutputs,
+                presets: unsafe_effect.numPrograms,
+                parameters: unsafe_effect.numParams,
+                inputs: unsafe_effect.numInputs,
+                outputs: unsafe_effect.numOutputs,
 
                 midi_inputs: 0,
                 midi_outputs: 0,
 
-                unique_id: effect.uniqueId,
-                version: effect.version,
+                unique_id: unsafe_effect.uniqueId,
+                version: unsafe_effect.version,
 
                 category: Category::from(plug.opcode(op::GetCategory)),
 
-                initial_delay: effect.initialDelay,
+                initial_delay: unsafe_effect.initialDelay,
 
                 preset_chunks: flags.intersects(PluginFlags::PROGRAM_CHUNKS),
                 f64_precision: flags.intersects(PluginFlags::CAN_DOUBLE_REPLACING),
@@ -588,7 +595,7 @@ impl Plugin for PluginInstance {
     }
 
     fn get_editor(&mut self) -> Option<Box<dyn Editor>> {
-        Some(Box::new(self.editor.clone()))
+        self.editor.take()
     }
 }
 
